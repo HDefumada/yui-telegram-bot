@@ -1,8 +1,11 @@
+[language.python]
+version = "3.10"
+
 [phases.setup]
 nixPkgs = ["python310", "gcc"]
 
-[phases.install]
-cmds = ["python3.10 -m venv /app/venv", ". /app/venv/bin/activate", "pip install --upgrade pip", "pip install -r requirements.txt"]
+[phases.build]
+cmds = ["pip install -r requirements.txt"]
 
-[phases.start]
-cmd = ". /app/venv/bin/activate && python bot.py"
+[start]
+cmd = "python bot.py"
