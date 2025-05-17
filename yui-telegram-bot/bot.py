@@ -1,4 +1,3 @@
-print("Yui está acordando no Railway...")  # só pra testar os logs
 import os
 import logging
 import signal
