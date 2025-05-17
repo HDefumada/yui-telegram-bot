@@ -56,7 +56,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # Comando /clear
 async def clear(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id not in AUTHORIZED_USER_IDS:
-        await update.message.reply_text("🚫 AcessoMoney negado.")
+        await update.message.reply_text("🚫 Acesso negado.")
         return
     context.user_data["history"] = []
     await update.message.reply_text("🧹 Histórico de conversa limpo!")
