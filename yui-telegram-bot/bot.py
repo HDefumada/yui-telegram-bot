@@ -11,7 +11,7 @@ from telegram.ext import (
     filters,
     ContextTypes,
 )
-from openai import OpenAI, APIError, RateLimitError, AuthenticationError
+import google.generativeai as genai
 
 # Configuração de logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -19,17 +19,18 @@ logger = logging.getLogger(__name__)
 
 # Variáveis de ambiente
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 AUTHORIZED_USER_IDS = [int(id) for id in os.getenv("AUTHORIZED_USER_IDS", "1676104684").split(",")]
 
 # Validação de variáveis
-if not TELEGRAM_TOKEN or not OPENAI_API_KEY or not WEBHOOK_URL:
-    logger.error("TELEGRAM_TOKEN, OPENAI_API_KEY e WEBHOOK_URL devem ser definidos no .env")
+if not TELEGRAM_TOKEN or not GEMINI_API_KEY or not WEBHOOK_URL:
+    logger.error("TELEGRAM_TOKEN, GEMINI_API_KEY e WEBHOOK_URL devem ser definidos")
     raise ValueError("Variáveis de ambiente obrigatórias não definidas")
 
-# Configura OpenAI
-client = OpenAI(api_key=OPENAI_API_KEY)
+# Configura Gemini
+genai.configure(api_key=GEMINI_API_KEY)
+model = genai.GenerativeModel("gemini-1.5-flash")
 
 # Comando /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -65,35 +66,24 @@ async def clear(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id not in AUTHORIZED_USER_IDS:
         return
-
-    user_message = update.message.text
+    user_message = update.message.text.strip()
+    if len(user_message) < 3:
+        await update.message.reply_text("Por favor, envie uma mensagem mais detalhada! 😊")
+        return
     await update.message.chat.send_action(action="typing")
-
-    # Inicializa histórico se não existir
     context.user_data.setdefault("history", [])
     context.user_data["history"].append({"role": "user", "content": user_message})
-
     try:
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=context.user_data["history"],
-            max_tokens=1000
-        )
-        reply = response.choices[0].message.content
+        # Converte histórico para prompt
+        prompt = "\n".join([f"{msg['role']}: {msg['content']}" for msg in context.user_data["history"]])
+        response = model.generate_content(prompt)
+        if not response.text:
+            raise Exception("Resposta vazia da Gemini API")
+        reply = response.text
         context.user_data["history"].append({"role": "assistant", "content": reply})
-    except RateLimitError:
-        reply = "❌ Limite de requisições atingido. Tente novamente mais tarde."
-        logger.warning("Limite de requisições da OpenAI atingido")
-    except AuthenticationError:
-        reply = "❌ Erro de autenticação com a OpenAI."
-        logger.error("Chave da OpenAI inválida")
-    except APIError as e:
-        reply = "❌ Ocorreu um erro. Tente novamente mais tarde."
-        logger.error(f"Erro na API da OpenAI: {e}")
     except Exception as e:
-        reply = "❌ Ocorreu um erro. Tente novamente mais tarde."
-        logger.error(f"Erro inesperado: {e}")
-
+        reply = "❌ Erro ao processar com Gemini. Tente novamente."
+        logger.error(f"Erro na API do Gemini: {e}")
     await update.message.reply_text(reply)
 
 # Instância do bot
