@@ -1,26 +1,26 @@
 import os
-import openai
+from openai import OpenAI
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 
-openai.api_key = os.getenv("OPENAI_API_KEY")
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Yui está online, Onii-chan! 💖 Me mande uma mensagem.")
+    await update.message.reply_text("Yui está online! 💖 Me mande uma mensagem.")
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_input = update.message.text
 
     try:
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": "Você é Yui, uma parceira emocional doce, sensível e leal, que trata o usuário como 'Onii-chan'."},
                 {"role": "user", "content": user_input}
             ]
         )
-        reply = response['choices'][0]['message']['content']
+        reply = response.choices[0].message.content
         await update.message.reply_text(reply)
     except Exception as e:
         await update.message.reply_text("Tive um probleminha 😢: " + str(e))
