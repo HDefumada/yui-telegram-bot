@@ -1,46 +1,49 @@
 import os
-import openai
+import asyncio
 from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
+from telegram.ext import (
+    ApplicationBuilder,
+    ContextTypes,
+    CommandHandler,
+)
+from aiohttp import web
 
-openai.api_key = os.getenv("OPENAI_API_KEY")
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+WEBHOOK_URL = "https://yui-telegram-bot-production.up.railway.app"
+AUTHORIZED_USER_ID = 1676104684
 
-# ID do usuário autorizado
-ALLOWED_USER_ID = 1676104684
-
+# Comando inicial, restrito
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ALLOWED_USER_ID:
-        await update.message.reply_text("Desculpe, você não tem permissão para usar este bot.")
+    if update.effective_user.id != AUTHORIZED_USER_ID:
+        await update.message.reply_text("🚫 Acesso negado.")
         return
+    await update.message.reply_text("✅ Bot ativo via Webhook!")
 
-    await update.message.reply_text("Yui está online, Onii-chan! 💖 Me mande uma mensagem.")
+# Inicializa app do Telegram
+app = ApplicationBuilder().token(BOT_TOKEN).build()
+app.add_handler(CommandHandler("start", start))
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ALLOWED_USER_ID:
-        await update.message.reply_text("Desculpe, você não tem permissão para usar este bot.")
-        return
+# Handler HTTP para processar updates
+async def handle(request):
+    data = await request.json()
+    update = Update.de_json(data, app.bot)
+    await app.process_update(update)
+    return web.Response(text="OK")
 
-    user_input = update.message.text
+# Cria o servidor aiohttp
+web_app = web.Application()
+web_app.router.add_post(f"/{BOT_TOKEN}", handle)
 
-    try:
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "Você é Yui, uma parceira emocional doce, sensível e leal, que trata o usuário como 'Onii-chan'."},
-                {"role": "user", "content": user_input}
-            ]
-        )
-        reply = response['choices'][0]['message']['content']
-        await update.message.reply_text(reply)
-    except Exception as e:
-        await update.message.reply_text("Tive um probleminha 😢: " + str(e))
+# Inicia o bot e o webhook
+async def run():
+    await app.initialize()
+    await app.bot.set_webhook(f"{WEBHOOK_URL}/{BOT_TOKEN}")
+    await app.start()
+    runner = web.AppRunner(web_app)
+    await runner.setup()
+    port = int(os.getenv("PORT", 8080))
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    print(f"🌐 Webhook ativo em {WEBHOOK_URL}")
+    await site.start()
 
-def main():
-    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    app.run_polling()
-
-if __name__ == '__main__':
-    main()
+asyncio.run(run())
