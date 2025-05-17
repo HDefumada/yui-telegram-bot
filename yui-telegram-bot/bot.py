@@ -37,7 +37,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("🚫 Acesso negado.")
         return
     context.user_data["history"] = []
-    await update.message.reply_text("✅ Oi! Sou a Yui, sua parceira emocional. Como posso te ajudar hoje? Use /help para mais comandos!")
+    await update.message.reply_text("✅ Olá! Sou a Yui! Como posso te ajudar hoje? Use /help para mais comandos!")
 
 # Comando /help
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
