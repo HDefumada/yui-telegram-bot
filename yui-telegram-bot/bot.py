@@ -28,9 +28,10 @@ WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 AUTHORIZED_USER_IDS = [int(id) for id in os.getenv("AUTHORIZED_USER_IDS", "1676104684").split(",")]
 
 # Configuração do SQLite
-DB_PATH = "history.db"
+DB_PATH = "/app/data/history.db"
 
 def init_db():
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
         cursor.execute("""
