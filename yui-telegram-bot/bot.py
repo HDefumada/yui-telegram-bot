@@ -11,7 +11,7 @@ from telegram.ext import (
     MessageHandler,
     filters,
 )
-from openai import OpenAI, APIError, RateLimitError, AuthenticationError
+import openai
 
 # Configuração de logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -29,7 +29,7 @@ if not TELEGRAM_TOKEN or not OPENAI_API_KEY or not WEBHOOK_URL:
     raise ValueError("Variáveis de ambiente obrigatórias não definidas")
 
 # Configura OpenAI
-client = OpenAI(api_key=OPENAI_API_KEY)
+openai.api_key = OPENAI_API_KEY
 
 # Comando /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -37,7 +37,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("🚫 Acesso negado.")
         return
     context.user_data["history"] = []
-    await update.message.reply_text("✅ Olá! Sou a Yui! Como posso te ajudar hoje? Use /help para mais comandos!")
+    await update.message.reply_text("✅ Oi! Sou a Yui, sua parceira emocional. Como posso te ajudar hoje? Use /help para mais comandos!")
 
 # Comando /help
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -74,20 +74,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["history"].append({"role": "user", "content": user_message})
 
     try:
-        response = client.chat.completions.create(
+        response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=context.user_data["history"],
             max_tokens=1000
         )
-        reply = response.choices[0].message.content
+        reply = response["choices"][0]["message"]["content"]
         context.user_data["history"].append({"role": "assistant", "content": reply})
-    except RateLimitError:
+    except openai.error.RateLimitError:
         reply = "❌ Limite de requisições atingido. Tente novamente mais tarde."
         logger.warning("Limite de requisições da OpenAI atingido")
-    except AuthenticationError:
+    except openai.error.AuthenticationError:
         reply = "❌ Erro de autenticação com a OpenAI."
         logger.error("Chave da OpenAI inválida")
-    except APIError as e:
+    except openai.error.APIError as e:
         reply = "❌ Ocorreu um erro. Tente novamente mais tarde."
         logger.error(f"Erro na API da OpenAI: {e}")
     except Exception as e:
