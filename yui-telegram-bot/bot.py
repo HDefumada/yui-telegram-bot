@@ -1,26 +1,37 @@
 import os
-from openai import OpenAI
+import openai
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+openai.api_key = os.getenv("OPENAI_API_KEY")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 
+# ID do usuário autorizado
+ALLOWED_USER_ID = 1676104684
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Yui está online! 💖 Me mande uma mensagem.")
+    if update.effective_user.id != ALLOWED_USER_ID:
+        await update.message.reply_text("Desculpe, você não tem permissão para usar este bot.")
+        return
+
+    await update.message.reply_text("Yui está online, Onii-chan! 💖 Me mande uma mensagem.")
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ALLOWED_USER_ID:
+        await update.message.reply_text("Desculpe, você não tem permissão para usar este bot.")
+        return
+
     user_input = update.message.text
 
     try:
-        response = client.chat.completions.create(
+        response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": "Você é Yui, uma parceira emocional doce, sensível e leal, que trata o usuário como 'Onii-chan'."},
                 {"role": "user", "content": user_input}
             ]
         )
-        reply = response.choices[0].message.content
+        reply = response['choices'][0]['message']['content']
         await update.message.reply_text(reply)
     except Exception as e:
         await update.message.reply_text("Tive um probleminha 😢: " + str(e))
