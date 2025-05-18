@@ -5,7 +5,6 @@ import asyncio
 import sqlite3
 import datetime
 import random
-import httpx
 from aiohttp import web
 from telegram import Update
 from telegram.ext import (
@@ -24,7 +23,6 @@ logger = logging.getLogger(__name__)
 
 # Variáveis de ambiente
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-GROK_API_KEY = os.getenv("GROK_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 AUTHORIZED_USER_IDS = [int(id) for id in os.getenv("AUTHORIZED_USER_IDS", "1676104684").split(",")]
@@ -138,41 +136,31 @@ def set_spontaneous_enabled(chat_id, enabled):
 if not TELEGRAM_TOKEN or not WEBHOOK_URL:
     logger.error("TELEGRAM_TOKEN e WEBHOOK_URL devem ser definidos")
     raise ValueError("Variáveis de ambiente obrigatórias não definidas")
-if not GROK_API_KEY:
-    logger.error("GROK_API_KEY deve ser definida")
-    raise ValueError("GROK_API_KEY não configurada")
+if not GEMINI_API_KEY:
+    logger.error("GEMINI_API_KEY deve ser definida")
+    raise ValueError("GEMINI_API_KEY não configurada")
 
-# Configura Gemini (fallback)
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
-    gemini_model = genai.GenerativeModel("gemini-1.5-flash")
-else:
-    gemini_model = None
+# Configura Gemini
+genai.configure(api_key=GEMINI_API_KEY)
+gemini_model = genai.GenerativeModel("gemini-1.5-flash")
 
 # Inicializa o banco de dados
 init_db()
 
 # Estados do ConversationHandler
-ASK_AUTOSCHEDULE, ASK_GEMINI = range(2)
+ASK_AUTOSCHEDULE = 0
 
-# Função para chamar a API do Grok
-async def call_grok(messages, personality):
-    async with httpx.AsyncClient() as client:
-        try:
-            response = await client.post(
-                "https://api.x.ai/v1/chat/completions",
-                headers={"Authorization": f"Bearer {GROK_API_KEY}"},
-                json={
-                    "model": "grok-3",
-                    "messages": [{"role": "system", "content": personality}] + messages,
-                    "max_tokens": 500
-                }
-            )
-            response.raise_for_status()
-            return response.json()["choices"][0]["message"]["content"]
-        except Exception as e:
-            logger.error(f"Erro na API do Grok: {e}")
-            raise
+# Função para chamar a API do Gemini
+async def call_gemini(messages, personality):
+    try:
+        prompt = f"{personality}\n" + "\n".join([f"{msg['role']}: {msg['content']}" for msg in messages])
+        response = gemini_model.generate_content(prompt)
+        if not response.text:
+            raise Exception("Resposta vazia da Gemini API")
+        return response.text
+    except Exception as e:
+        logger.error(f"Erro na API do Gemini: {e}")
+        return f"❌ Erro ao processar com Gemini: {e}. Tente novamente mais tarde."
 
 # Comando /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -331,52 +319,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     full_history = context.user_data["history"] + [{"role": "user", "content": user_message}]
     save_history(chat_id, "user", user_message)
 
-    reply = None
-    try:
-        reply = await call_grok(full_history, personality)
-        context.user_data["history"].append({"role": "assistant", "content": reply})
-        save_history(chat_id, "assistant", reply)
-    except Exception:
-        if gemini_model:
-            await update.message.reply_text(
-                "❌ Erro com a API do Grok. Deseja prosseguir com a Gemini API? Responda 'Sim' para continuar ou qualquer outra coisa para parar."
-            )
-            context.user_data["pending_message"] = user_message
-            return ASK_GEMINI
-        else:
-            reply = "❌ Erro com a API do Grok e Gemini não configurada. Tente novamente mais tarde."
-
-    if reply:
-        await update.message.reply_text(reply)
-    return ConversationHandler.END
-
-# Resposta para fallback do Gemini
-async def handle_gemini_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id not in AUTHORIZED_USER_IDS:
-        await update.message.reply_text("🚫 Acesso negado.")
-        return ConversationHandler.END
-    chat_id = update.effective_chat.id
-    response = update.message.text.strip().lower()
-    if response != "sim":
-        await update.message.reply_text("Ok, vamos pausar por agora. Tente novamente mais tarde! 😊")
-        return ConversationHandler.END
-
-    personality = get_personality(chat_id)
-    full_history = context.user_data["history"] + [{"role": "user", "content": context.user_data["pending_message"]}]
-    try:
-        prompt = f"{personality}\n" + "\n".join([f"{msg['role']}: {msg['content']}" for msg in full_history])
-        response = gemini_model.generate_content(prompt)
-        if not response.text:
-            raise Exception("Resposta vazia da Gemini API")
-        reply = response.text
-        context.user_data["history"].append({"role": "assistant", "content": reply})
-        save_history(chat_id, "assistant", reply)
-    except Exception as e:
-        reply = "❌ Erro ao processar com Gemini. Tente novamente mais tarde."
-        logger.error(f"Erro na API do Gemini: {e}")
-
+    reply = await call_gemini(full_history, personality)
+    context.user_data["history"].append({"role": "assistant", "content": reply})
+    save_history(chat_id, "assistant", reply)
     await update.message.reply_text(reply)
-    return ConversationHandler.END
 
 # Tarefa para enviar mensagens agendadas e espontâneas
 async def schedule_task(context: ContextTypes.DEFAULT_TYPE):
@@ -392,7 +338,7 @@ async def schedule_task(context: ContextTypes.DEFAULT_TYPE):
             if now.hour == hour and now.minute == minute:
                 try:
                     personality = get_personality(chat_id)
-                    reply = await call_grok([{"role": "user", "content": f"Crie uma {message}"}], personality)
+                    reply = await call_gemini([{"role": "user", "content": f"Crie uma {message}"}], personality)
                     await context.bot.send_message(chat_id=chat_id, text=reply)
                 except Exception as e:
                     logger.error(f"Erro ao enviar mensagem agendada para {chat_id}: {e}")
@@ -403,7 +349,7 @@ async def schedule_task(context: ContextTypes.DEFAULT_TYPE):
                 try:
                     personality = get_personality(chat_id)
                     history = load_history(chat_id)[-5:]  # Últimas 5 mensagens
-                    reply = await call_grok(
+                    reply = await call_gemini(
                         history + [{"role": "user", "content": "Envie um lembrete motivacional ou check-in emocional."}],
                         personality
                     )
@@ -424,7 +370,6 @@ conv_handler = ConversationHandler(
     ],
     states={
         ASK_AUTOSCHEDULE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_autoschedule_response)],
-        ASK_GEMINI: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_gemini_choice)],
     },
     fallbacks=[],
 )
