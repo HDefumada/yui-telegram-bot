@@ -351,7 +351,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 # Resposta para fallback do Gemini
-async def handle_gemKILLini_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_gemini_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id not in AUTHORIZED_USER_IDS:
         await update.message.reply_text("🚫 Acesso negado.")
         return ConversationHandler.END
